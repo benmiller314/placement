@@ -5,6 +5,7 @@
 import pandas as pd
 import datetime
 import os
+import numpy as np
 
 def main():
 	# input and output files
@@ -38,36 +39,52 @@ def main():
 	schools = pd.merge(schools.to_frame(name='NAME'), cc_data, how='left', on=['NAME'])
 	
 	# add columns from (desired) CC_labels sheet to CC_data
-	desired = ['BASIC2015', 'SIZESET2015', 'IPUG2015', 'IPGRAD2015', 'ENRPROFILE2015', 'UGPROFILE', 'SECTOR', 'OBEREG', 'LOCALE']
-	vars = cc_labels.Variable.dropna()
+	desired = ['BASIC2015', 'SIZESET2015', 'IPUG2015', 'IPGRAD2015', 'ENRPROFILE2015', 'UGPROFILE2015', 'SECTOR', 'OBEREG', 'LOCALE']
+# 	myvars = cc_labels.Variable.dropna()
 	
 	# Helper function to get the label of an arbitrary variable and value
 	def getlabel4value(labelsheet, var, val):
 		# set the query
-		q = 'Variable == "{}" & Value == {}'.format(var, val)
-	
+		if np.isnan(val):
+			return None
+		else:
+			q = 'Variable == "{}" & Value == {}'.format(var, val)
+		
 		# match the value; this returns a frame with one row and two columns,
 		# the column header (label) and its value (val)
 		label_frame = labelsheet.query(q)
-	
+		
 		# return just the string content of the second column
-		return label_frame.iloc[0][1]
-
-
+		# unless it's an error
+		if(label_frame.empty):
+			return None
+		else:
+			return label_frame.iloc[0][1]
+	
+	
 	# testing
 	col = 'SIZESET2015'
 	newcol = col + '_VAL'	
-	row = schools.iloc[0]	# first school, entire row
+	row = schools.iloc[7]
 	getlabel4value(cc_labels, col, row[col])
 	
-	# implementing
+	# debugging
+	q = 'Variable == "{}" & Value == {}'.format(col, row[col])
+	label_frame = cc_labels.query(q)
+	
+	# okay, let's do this thing
+	for col in desired:
+		newcol = col + '_VAL'
+		kwargs = {newcol : schools.apply(lambda x: getlabel4value(cc_labels, col, x[col]), axis=1)}
+		schools = schools.assign(**kwargs) 
 		
-	schools.assign(newcol = lambda x: getlabel4value(cc_labels, col, x[col])
 
-	cc_filled = CC_labels.fillna(method='ffill')
-	cc_filled[cc_filled['Variable'] == 'BASIC2015']
-	cc_filled.query(Variable == 'BASIC2015')
-	cc_filled.
+
+
+# 	cc_filled = CC_labels.fillna(method='ffill')
+# 	cc_filled[cc_filled['Variable'] == 'BASIC2015']
+# 	cc_filled.query(Variable == 'BASIC2015')
+# 	cc_filled.
 
 	
 	
