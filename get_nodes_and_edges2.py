@@ -28,7 +28,17 @@ def main():
 	schools = schoolrows['Worked At'].drop_duplicates()
 	schools = schools.append(data['Studied At (PhD)'].drop_duplicates())
 	schools = schools.drop_duplicates().dropna()
+	# add a column that's all "school"
+	schools['Type'] = 'school'
+
+	
 	del schoolrows
+	
+	# get non-schools
+	nonschoolrows = data[data['School?'] == 'n']
+	nonschools = nonschoolrows['Worked At'].drop_duplicates().dropna()
+	nonschools['Type'] = 'nonschool'
+	del nonschoolrows
 
 	
 	# load extra info from Carnegie Classifications
@@ -77,26 +87,25 @@ def main():
 		newcol = col + '_VAL'
 		kwargs = {newcol : schools.apply(lambda x: getlabel4value(cc_labels, col, x[col]), axis=1)}
 		schools = schools.assign(**kwargs) 
-		
-
-
-
-# 	cc_filled = CC_labels.fillna(method='ffill')
-# 	cc_filled[cc_filled['Variable'] == 'BASIC2015']
-# 	cc_filled.query(Variable == 'BASIC2015')
-# 	cc_filled.
-
 	
+	# Get column name ready for kumu
+	schools = schools.rename({'NAME':'Label'})
 	
 	# now for the people
 	data['Label'] = data['First Name'] + ' ' + data['Last Name']
 	people = data['Label'].drop_duplicates().dropna()
+	people = people.to_frame(name='Label')
+	people['Type'] = 'person'
 	
 	
-	
-	# and export schools and people together as nodes
-	nodes = people.append(schools)
-	
+	# finally, export places and people together as nodes
+	headers = list(schools)
+	with open(nodefile, mode='wt') as f:
+		fieldnames = ['Label', 'Type'] + [x for x in headers if not x in ('Label', 'Type')]
+		writer = csv.DictWriter(f, dialect="excel", fieldnames=fieldnames)
+		writer.writeheader()
+		writer.writerows(people)
+		writer.writerows(places)
 	
 	
 	
