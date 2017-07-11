@@ -6,10 +6,11 @@ import pandas as pd
 import datetime
 import os
 import numpy as np
+import csv
 
 def main():
 	# input and output files
-	infile = 'A worked at B - 20170710-2209pm.csv'
+	infile = 'Worked_At_20170711-2.csv'
 	CCfile = 'CCIHE2015-PublicDataFile.xlsx'
 
 	now = datetime.date.today().strftime("%Y%m%d")
@@ -28,16 +29,22 @@ def main():
 	schools = schoolrows['Worked At'].drop_duplicates()
 	schools = schools.append(data['Studied At (PhD)'].drop_duplicates())
 	schools = schools.drop_duplicates().dropna()
+	# convert to dataframe
+	schools = schools.to_frame(name='NAME')
 	# add a column that's all "school"
 	schools['Type'] = 'school'
 
-	
 	del schoolrows
 	
 	# get non-schools
 	nonschoolrows = data[data['School?'] == 'n']
 	nonschools = nonschoolrows['Worked At'].drop_duplicates().dropna()
+	nonschools = nonschools.to_frame(name='Worked At')
 	nonschools['Type'] = 'nonschool'
+	
+	# get city/state for non-schools; for schools we'll do this later from CC
+	mylist = ['Worked At', 'City', 'State', 'Country']
+	nonschools = pd.merge(nonschools, data[mylist], how='left', on=['Worked At'])
 	del nonschoolrows
 
 	
@@ -45,51 +52,62 @@ def main():
 	cc_labels = pd.read_excel(CCfile, sheetname='Labels', dtype='object', index_col=[0,1])
 	cc_data =  pd.read_excel(CCfile, sheetname='Data', dtype='object')
 
-	# add columns from CC_data sheet to schools
-	schools = pd.merge(schools.to_frame(name='NAME'), cc_data, how='left', on=['NAME'])
+	# add desired columns from CC_data sheet to schools
+	desired = ['CC2000', 'BASIC2005', 'BASIC2010', 'BASIC2015', 'SIZESET2015', 'IPUG2015', 'IPGRAD2015', 'ENRPROFILE2015', 'UGPROFILE2015', 'SECTOR', 'OBEREG', 'LOCALE']
+	idcols = ['NAME', 'CITY', 'STABBR']
+	schools = pd.merge(schools, cc_data[idcols + desired], how='left', on=['NAME'])
+	schools['COUNTRY'] = 'USA'
+	neworder = ['NAME', 'Type', 'CITY', 'STABBR', 'COUNTRY'] + desired
+	schools = schools[neworder]
+	del(neworder)
+
+	## add columns from (desired) CC_labels sheet to CC_data
 	
-	# add columns from (desired) CC_labels sheet to CC_data
-	desired = ['BASIC2015', 'SIZESET2015', 'IPUG2015', 'IPGRAD2015', 'ENRPROFILE2015', 'UGPROFILE2015', 'SECTOR', 'OBEREG', 'LOCALE']
-# 	myvars = cc_labels.Variable.dropna()
-	
-	# Helper function to get the label of an arbitrary variable and value
+		# Helper function to get the label of an arbitrary variable and value
 	def getlabel4value(labelsheet, var, val):
 		# set the query
 		if np.isnan(val):
 			return None
 		else:
 			q = 'Variable == "{}" & Value == {}'.format(var, val)
-		
+	
 		# match the value; this returns a frame with one row and two columns,
 		# the column header (label) and its value (val)
 		label_frame = labelsheet.query(q)
-		
+	
 		# return just the string content of the second column
 		# unless it's an error
 		if(label_frame.empty):
 			return None
 		else:
 			return label_frame.iloc[0][1]
+
 	
-	
-	# testing
-	col = 'SIZESET2015'
-	newcol = col + '_VAL'	
-	row = schools.iloc[7]
-	getlabel4value(cc_labels, col, row[col])
-	
-	# debugging
-	q = 'Variable == "{}" & Value == {}'.format(col, row[col])
-	label_frame = cc_labels.query(q)
-	
-	# okay, let's do this thing
+	## testing
+# 	col = 'SIZESET2015'
+# 	newcol = col + '_VAL'	
+# 	row = schools.iloc[7]
+# 	getlabel4value(cc_labels, col, row[col])
+# 	
+# 	## debugging
+# 	q = 'Variable == "{}" & Value == {}'.format(col, row[col])
+# 	label_frame = cc_labels.query(q)
+# 	
+	# okay, let's do this thing	
 	for col in desired:
 		newcol = col + '_VAL'
 		kwargs = {newcol : schools.apply(lambda x: getlabel4value(cc_labels, col, x[col]), axis=1)}
 		schools = schools.assign(**kwargs) 
+
+	# save those new columns for ease of reference
+	myvals = [x for x in list(schools) if x.endswith('_VAL')]
 	
 	# Get column name ready for kumu
-	schools = schools.rename({'NAME':'Label'})
+	schools = schools.rename(columns={'NAME':'Label'})
+	nonschools = nonschools.rename(columns={'Worked At':'Label',
+											'City':'CITY',
+											'State':'STABBR',
+											'Country':'COUNTRY'})
 	
 	# now for the people
 	data['Label'] = data['First Name'] + ' ' + data['Last Name']
@@ -100,12 +118,10 @@ def main():
 	
 	# finally, export places and people together as nodes
 	headers = list(schools)
-	with open(nodefile, mode='wt') as f:
-		fieldnames = ['Label', 'Type'] + [x for x in headers if not x in ('Label', 'Type')]
-		writer = csv.DictWriter(f, dialect="excel", fieldnames=fieldnames)
-		writer.writeheader()
-		writer.writerows(people)
-		writer.writerows(places)
-	
+	schools.to_csv(nodefile, index=False)
+	with open(nodefile, mode='a') as f:
+		nonschools.to_csv(f, index=False, header=False)
+	with open(nodefile, mode='a') as f:
+		people.to_csv(f, index=False, header=False)
 	
 	
